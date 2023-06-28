@@ -1,6 +1,16 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() => runApp(MyApp());
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  //await Firebase.initializeApp();
+  runApp(MyApp());
+}
 
 class MyApp extends StatefulWidget {
   @override
@@ -8,49 +18,330 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    User.isLogin = _auth.currentUser != null? true : false;
+    return MaterialApp(
+      home: Scaffold(
+        body: User.isLogin ? GameLib() : LoginScreen(),
+      ),
+    );
+  }
+}
+
+class User{
+  final FirebaseAuth auth = FirebaseAuth.instance;
+  final FirebaseFirestore firestore = FirebaseFirestore.instance;
+  static String? name = "";
+  static String uid = "";
+  static bool isLogin = false;
+
+  //Sign up method
+  Future<String?> signup({required String email, required String password, required String nickName}) async {
+    try {
+      print("email:$email");
+      print("password:$password");
+      await auth.createUserWithEmailAndPassword(email: email, password: password);
+      uid  = auth.currentUser!.uid;
+      await firestore.collection('users').doc(uid).set({'nickName': nickName});
+      name = await getUserData("nickName");
+      print(name);
+      return null;
+    }
+    on FirebaseAuthException catch (e) {
+      return e.message;
+    }
+  }
+
+  //Sign in method
+  Future<String?> signIn({required String email, required String password}) async {
+    try {
+      await auth.signInWithEmailAndPassword(email: email, password: password);
+      uid  = auth.currentUser!.uid;
+      name = await getUserData("nickName");
+      return null;
+    }
+    on FirebaseAuthException catch (e) {
+      return e.message;
+    }
+  }
+
+  //Sign out method (memorized)
+  Future<void> signOut() async {
+    await auth.signOut();
+    name = "";
+    uid = "";
+  }
+
+  Future<String?> getUserData(String item) async {
+    try {
+      DocumentSnapshot snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+
+      if (snapshot.exists) {
+        // 文檔存在，可以獲取數據
+        Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+        return data[item];
+      }
+      else {
+        return null;
+      }
+    }
+    catch (e) {
+      return null;
+    }
+  }
+}
+
+
+class GameLib extends StatefulWidget{
+  @override
+  _GameLib createState() => _GameLib();
+}
+
+class _GameLib extends State<GameLib>{
   final tabs = [
     Center(child: TicTacToePage()),
     Center(child: FiveInARow()),
   ];
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  int _currentindex = 0;
+  int _currentIndex = 0;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(
-          title: const Text('小遊戲庫'),
-        ),
-        body: tabs[_currentindex],
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.red,
-          selectedItemColor: Colors.white,
-          selectedFontSize: 16.0,
-          unselectedFontSize: 12.0,
-          iconSize: 20.0,
-          currentIndex: _currentindex,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: '井字遊戲',
+          body: tabs[_currentIndex],
+          appBar: AppBar(
+            title: const Text('小遊戲庫'),
+            actions: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    '登出',
+                    style: TextStyle(
+                      fontSize: 16.0,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.logout),
+                    onPressed: () {
+                      // 在這裡處理登出Firebase的邏輯
+                      User.isLogin = false;
+                      _auth.signOut();
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (context) => LoginScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.red,
+            selectedItemColor: Colors.white,
+            selectedFontSize: 16.0,
+            unselectedFontSize: 12.0,
+            iconSize: 20.0,
+            currentIndex: _currentIndex,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                label: '井字遊戲',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.access_alarm),
+                label: '五子棋',
+              ),
+            ],
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });},
+          ),
+      ),
+    );
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  //final VoidCallback onLogin;
+  //LoginScreen({required this.onLogin});
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final User user = User();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+
+  Future<void> _login() async {
+    try {
+      final String email = _emailController.text.trim();
+      final String password = _passwordController.text.trim();
+      await user.signIn(email: email, password: password );
+      // 登入成功，切換頁面
+      User.isLogin = true;
+
+    } catch (e) {
+      // 登入失敗，處理錯誤
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('登入失敗'),
+            content: Text('請確認帳號密碼是否正確。'),
+            actions: [
+              TextButton(
+                child: Text('確定'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('登入'),
+      ),
+
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: '電子郵件'),
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.access_alarm),
-              label: '五子棋',
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: '密碼'),
+              obscureText: true,
             ),
+            SizedBox(height: 16.0),
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (context) => Register()),
+                      );
+                    },
+                    child: const Text('註冊'),
+                  ),
+                  const SizedBox(width: 20),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await _login();
+                      if(User.isLogin){
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (context) => GameLib()),
+                        );
+                      }
+                    },
+                    child: const Text('登入'),
+                  ),
+                ],
+              ),
+            )
           ],
-          onTap: (index) {
-            setState(() {
-              _currentindex = index;
-            });
-          },
         ),
       ),
     );
   }
 }
+
+class Register extends StatefulWidget{
+  @override
+  _Register createState() => _Register();
+}
+
+class _Register extends State<Register>{
+  final User user = User();
+  final TextEditingController _email = TextEditingController();
+  final TextEditingController _password = TextEditingController();
+  final TextEditingController _nickName = TextEditingController();
+
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('註冊帳號'),
+      ),
+
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _email,
+              decoration: InputDecoration(labelText: '電子郵件'),
+            ),
+            TextField(
+              controller: _password,
+              decoration: InputDecoration(labelText: '密碼'),
+              obscureText: true,
+            ),
+            TextField(
+              controller: _nickName,
+              decoration: InputDecoration(labelText: '暱稱'),
+            ),
+            SizedBox(height: 16.0),
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () async {
+                      await user.signup(
+                          email: _email.text.trim(),
+                          password: _password.text.trim(),
+                          nickName: _nickName.text.trim()
+                      );
+                      if(User.isLogin){
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (context) => GameLib()),
+                        );
+                      }
+                    },
+                    child: const Text('註冊'),
+                  ),
+                  const SizedBox(width: 20),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 
 class TicTacToePage extends StatefulWidget {
   @override
@@ -60,7 +351,7 @@ class TicTacToePage extends StatefulWidget {
 class _TicTacToePageState extends State<TicTacToePage> {
   // 0: empty, 1: circle, 2: cross
   List<List<int>> board = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  List<String> player = ["玩家1", "玩家2"];
+  List<String> player = [User.name.toString(), "玩家2"];
   int currentPlayer = 1;
   int winner = 0; //  0:無  1:玩家1   2:玩家2  3:平手
   List<int> countWin = [0, 0];
@@ -114,21 +405,21 @@ class _TicTacToePageState extends State<TicTacToePage> {
       body: Column(
         children: <Widget>[
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(20),
             child: Row(
               children: <Widget>[
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "玩家1：Ｏ　玩家２：Ｘ",
+                    "${player[0]}：Ｏ　${player[1]}：Ｘ",
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
-                const Flexible(fit: FlexFit.tight, child: SizedBox(),),
+                Flexible(fit: FlexFit.tight, child: SizedBox(),),
                 Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      "勝場：玩家1：${countWin[0]}    玩家２：${countWin[1]}",
+                      "勝場：${player[0]}：${countWin[0]}    ${player[1]}：${countWin[1]}",
                       style: const TextStyle(fontSize: 12),
                     )
                 ),
@@ -153,7 +444,7 @@ class _TicTacToePageState extends State<TicTacToePage> {
                           win = '平手';
                         }
                         else if(winner==1 || winner==2){
-                          win = "玩家 $winner wins";
+                          win = "${player[winner-1]} wins";
                           countWin[winner-1] += 1;
                         }
                         if (winner != 0) {
@@ -214,6 +505,7 @@ class FiveInARow extends StatefulWidget {
 
 class _FiveInARowState extends State<FiveInARow> {
   List<List<int>> _board = List.generate(15, (_) => List.generate(15, (_) => 0));
+  List<String> players = [User.name.toString(), "玩家2"];
   int _currentPlayer = 1;
   int _gameState = 0;
   List<int> countWin = [0, 0];
@@ -341,7 +633,7 @@ class _FiveInARowState extends State<FiveInARow> {
       appBar: AppBar(
         centerTitle: true,
         title: Text("五子棋  -->  "
-            "目前玩家：${_currentPlayer == 1 ? '玩家1' : '玩家2'}",
+            "目前玩家：${_currentPlayer == 1 ? players[0] : players[1]}",
           style: const TextStyle(fontSize: 20),
         ),
         backgroundColor: Colors.red,
@@ -353,18 +645,18 @@ class _FiveInARowState extends State<FiveInARow> {
             padding: const EdgeInsets.all(20),
             child: Row(
               children: <Widget>[
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "玩家1：yellow　玩家２：red",
-                    style: TextStyle(fontSize: 12),
+                    "${players[0]}：yellow　${players[1]}：red",
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ),
                 const Flexible(fit: FlexFit.tight, child: SizedBox(),),
                 Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      "勝場：玩家1：${countWin[0]}    玩家２：${countWin[1]}",
+                      "勝場：${players[0]}：${countWin[0]}    ${players[1]}：${countWin[1]}",
                       style: const TextStyle(fontSize: 12),
                     )
                 ),
@@ -385,7 +677,7 @@ class _FiveInARowState extends State<FiveInARow> {
                     String word = '';
                     if(_gameState == 1 || _gameState == 2){
                       countWin[_gameState-1] += 1;
-                      word = '玩家 $_gameState 贏了!';
+                      word = '${players[_gameState-1]} 贏了!';
                     }
                     else if(_gameState == 3){
                       word = '平手';
