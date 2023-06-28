@@ -8,7 +8,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  //await Firebase.initializeApp();
   runApp(MyApp());
 }
 
@@ -83,7 +82,6 @@ class User{
           .get();
 
       if (snapshot.exists) {
-        // 文檔存在，可以獲取數據
         Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
         return data[item];
       }
@@ -133,7 +131,6 @@ class _GameLib extends State<GameLib>{
                   IconButton(
                     icon: const Icon(Icons.logout),
                     onPressed: () {
-                      // 在這裡處理登出Firebase的邏輯
                       User.isLogin = false;
                       _auth.signOut();
                       Navigator.pushReplacement(
@@ -175,8 +172,6 @@ class _GameLib extends State<GameLib>{
 }
 
 class LoginScreen extends StatefulWidget {
-  //final VoidCallback onLogin;
-  //LoginScreen({required this.onLogin});
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
@@ -193,11 +188,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final String email = _emailController.text.trim();
       final String password = _passwordController.text.trim();
       await user.signIn(email: email, password: password );
-      // 登入成功，切換頁面
       User.isLogin = true;
 
     } catch (e) {
-      // 登入失敗，處理錯誤
       showDialog(
         context: context,
         builder: (BuildContext context) {
